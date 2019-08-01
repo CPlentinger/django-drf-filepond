@@ -4,6 +4,8 @@ from __future__ import unicode_literals
 from io import BytesIO
 import logging
 
+from django.conf.global_settings import MEDIA_URL
+
 import django_drf_filepond.drf_filepond_settings as local_settings
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import UploadedFile, InMemoryUploadedFile
@@ -23,7 +25,7 @@ from django_drf_filepond.renderers import PlainTextRenderer
 import re
 import os
 import mimetypes
-from django.http.response import HttpResponse
+from django.http.response import HttpResponse, HttpResponseRedirect
 
 LOG = logging.getLogger(__name__)
 
@@ -179,20 +181,22 @@ class LoadView(APIView):
                             'correctly.', 
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
-        file_path_base = local_settings.FILE_STORE_PATH
-        
         if LOAD_RESTORE_PARAM_NAME not in request.GET:
             return Response('A required parameter is missing.', 
                             status=status.HTTP_400_BAD_REQUEST)
-        
-        param_filename = False
         upload_id = request.GET[LOAD_RESTORE_PARAM_NAME]
         
         if (not upload_id) or (upload_id == ''):
             return Response('An invalid ID has been provided.',
                             status=status.HTTP_400_BAD_REQUEST)
-        
-        upload_id_fmt = re.compile('^([%s]){22}$' 
+        if upload_id.startswith(MEDIA_URL):
+            return self.get_file_from_path(upload_id)
+        return self.default_bucket_redirect(upload_id)
+
+    def default_bucket_redirect(self, upload_id):
+        file_path_base = local_settings.FILE_STORE_PATH
+        param_filename = False
+        upload_id_fmt = re.compile('^([%s]){22}$'
                                    % (shortuuid.get_alphabet()))
         
         su = None
@@ -219,7 +223,43 @@ class LoadView(APIView):
                           'doesn\'t exist.')
                 return Response('Not found', 
                                 status=status.HTTP_404_NOT_FOUND)
-        
+        # su is now the StoredUpload record for the requested file
+
+        file_path = '//{}/{}'.format(file_path_base, su.file_path)
+        response = HttpResponseRedirect(file_path)
+        return response
+
+    def default_fp_get(self, upload_id):
+        file_path_base = local_settings.FILE_STORE_PATH
+        param_filename = False
+        upload_id_fmt = re.compile('^([%s]){22}$'
+                                   % (shortuuid.get_alphabet()))
+
+        su = None
+        if not upload_id_fmt.match(upload_id):
+            param_filename = True
+            LOG.debug('The provided string doesn\'t seem to be an '
+                      'upload ID. Assuming it is a filename/path.')
+        else:
+            # The provided id could be an upload_id so we can check here.
+            try:
+                su = StoredUpload.objects.get(upload_id=upload_id)
+            except StoredUpload.DoesNotExist:
+                LOG.debug('A StoredUpload with the provided ID doesn\'t '
+                          'exist. Assuming this could be a filename.')
+                param_filename = True
+
+        if param_filename:
+            # Try and lookup a StoredUpload record with the specified id
+            # as the file path
+            try:
+                su = StoredUpload.objects.get(file_path=upload_id)
+            except StoredUpload.DoesNotExist:
+                LOG.debug('A StoredUpload with the provided file path '
+                          'doesn\'t exist.')
+                return Response('Not found',
+                                status=status.HTTP_404_NOT_FOUND)
+
         # su is now the StoredUpload record for the requested file
         
         # See if the stored file with the path specified in su exists 
@@ -245,7 +285,29 @@ class LoadView(APIView):
         response = HttpResponse(data, content_type=ct)
         response['Content-Disposition'] = ('inline; filename=%s' % 
                                            filename)
-        
+        return response
+
+    def get_file_from_path(self, path):
+        if ((not os.path.exists(local_settings.BASE_DIR + path)) or
+                (not os.path.isfile(local_settings.BASE_DIR + path))):
+            return Response('Error reading file...',
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        # We now know that the file exists and is a file not a directory
+        try:
+            with open(local_settings.BASE_DIR + path, 'rb') as f:
+                data = f.read()
+        except IOError as e:
+            LOG.error('Error reading requested file: %s' % str(e))
+            return Response('Error reading file...',
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        filename = os.path.basename(path)
+        ct = _get_content_type(filename)
+
+        response = HttpResponse(data, content_type=ct)
+        response['Content-Disposition'] = ('inline; filename=%s' %
+                                           filename)
         return response
 
 class RestoreView(APIView):
