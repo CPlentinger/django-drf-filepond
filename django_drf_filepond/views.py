@@ -189,10 +189,7 @@ class LoadView(APIView):
         if (not upload_id) or (upload_id == ''):
             return Response('An invalid ID has been provided.',
                             status=status.HTTP_400_BAD_REQUEST)
-        if hasattr(local_settings, 'AWS_STORAGE_BUCKET_NAME'):
-            return self.default_bucket_redirect(upload_id)
-        else:
-            return self.get_file_from_path(upload_id)
+        return self.default_bucket_redirect(upload_id)
 
     def default_bucket_redirect(self, upload_id):
         file_path_base = local_settings.FILE_STORE_PATH
