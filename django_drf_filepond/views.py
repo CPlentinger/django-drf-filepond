@@ -72,8 +72,7 @@ class ProcessView(APIView):
         # TODO: Check whether this is necessary - maybe add a security 
         # parameter that can be disabled to turn off this check if the 
         # developer wishes?
-        if ((not hasattr(local_settings, 'UPLOAD_TMP')) or 
-            (not (storage.location).startswith(local_settings.BASE_DIR))):
+        if not hasattr(local_settings, 'UPLOAD_TMP'):
             return Response('The file upload path settings are not '
                             'configured correctly.', 
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR)
