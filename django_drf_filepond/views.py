@@ -63,10 +63,10 @@ class ProcessView(APIView):
     # from FilePond.
     parser_classes = (MultiPartParser,)
     renderer_classes = (PlainTextRenderer,)
-    
+
     def post(self, request):
         LOG.debug('Filepond API: Process view POST called...')
-        
+
         # Enforce that the upload location must be a sub-directory of 
         # the project base directory
         # TODO: Check whether this is necessary - maybe add a security 
@@ -74,14 +74,14 @@ class ProcessView(APIView):
         # developer wishes?
         if not hasattr(local_settings, 'UPLOAD_TMP'):
             return Response('The file upload path settings are not '
-                            'configured correctly.', 
+                            'configured correctly.',
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
+
         # Check that we've received a file and then generate a unique ID
         # for it. Also generate a unique UD for the temp upload dir
         file_id = _get_file_id()
         upload_id = _get_file_id()
-        
+
         # By default the upload element name is expected to be "filepond"
         # As raised in issue #4, there are cases where there may be more 
         # than one filepond instance on a page, or the developer has opted 
@@ -89,22 +89,22 @@ class ProcessView(APIView):
         # Using the example from #4, this provides support these cases.
         upload_field_name = 'filepond'
         if 'fp_upload_field' in request.data:
-            upload_field_name = request.data['fp_upload_field']    
-        
+            upload_field_name = request.data['fp_upload_field']
+
         if upload_field_name not in request.data:
             raise ParseError("Invalid request data has been provided.")
-            
+
         file_obj = request.data[upload_field_name]
-        
+
         # Save original file name and set name of saved file to the unique ID
         upload_filename = file_obj.name
         file_obj.name = file_id
-        
+
         # The type of parsed data should be a descendant of an UploadedFile
         # type.
         if not isinstance(file_obj, UploadedFile):
             raise ParseError('Invalid data type has been parsed.')
-        
+
         # Before we attempt to save the file, make sure that the upload  
         # directory we're going to save to exists.
         # *** It's not necessary to explicitly create the directory since
@@ -113,20 +113,22 @@ class ProcessView(APIView):
         #    LOG.debug('Filepond app: Creating file upload directory '
         #             '<%s>...' % storage.location)
         #    os.makedirs(storage.location, mode=0o700)
-        
+
         # We now need to create the temporary upload object and store the 
         # file and metadata.
-        tu = TemporaryUpload(upload_id=upload_id, file_id=file_id,  
-                             file=file_obj, upload_name=upload_filename, 
+        url = "{}/{}".format(local_settings.UPLOAD_TMP, upload_filename)
+
+        tu = TemporaryUpload(upload_id=upload_id, file_id=file_id,
+                             url=url, upload_name=upload_filename,
                              upload_type=TemporaryUpload.FILE_DATA)
         tu.save()
-        
-        response = Response(upload_id, status=status.HTTP_200_OK, 
+
+        response = Response(upload_id, status=status.HTTP_200_OK,
                             content_type='text/plain')
         return response
 
 class RevertView(APIView):
-    
+
     parser_classes = (PlainTextParser,)
     renderer_classes = (PlainTextRenderer,)
     '''
@@ -140,15 +142,15 @@ class RevertView(APIView):
             request_data = request.data.decode('utf-8')
         else:
             request_data = request.data
-        
+
         # Expecting a 22-character unique ID telling us which temporary 
         # upload to remove.
         LOG.debug('Filepond API: Revert view DELETE called...')
         upload_id = request_data.strip()
-        
+
         if len(upload_id) != 22:
             raise ParseError('The provided data is invalid.')
-        
+
         # Lookup the temporary file record
         try:
             tu = TemporaryUpload.objects.get(upload_id=upload_id)
@@ -157,11 +159,11 @@ class RevertView(APIView):
             tu.delete()
         except TemporaryUpload.DoesNotExist:
             raise NotFound('The specified file does not exist.')
-        
+
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 class LoadView(APIView):
-    
+
     # Expect the upload ID to be provided with the 'id' parameter
     # This may be either an upload_id that is stored in the StoredUpload
     # table or it may be the path to a file (relative to the fixed upload
@@ -169,22 +171,22 @@ class LoadView(APIView):
     # setting parameter). 
     def get(self, request):
         LOG.debug('Filepond API: Load view GET called...')
-        
-        if ((not hasattr(local_settings, 'FILE_STORE_PATH')) 
-            or 
+
+        if ((not hasattr(local_settings, 'FILE_STORE_PATH'))
+            or
             (not os.path.exists(local_settings.FILE_STORE_PATH))
             or
             (not os.path.isdir(local_settings.FILE_STORE_PATH))
         ):
             return Response('The file upload settings are not configured '
-                            'correctly.', 
+                            'correctly.',
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
+
         if LOAD_RESTORE_PARAM_NAME not in request.GET:
-            return Response('A required parameter is missing.', 
+            return Response('A required parameter is missing.',
                             status=status.HTTP_400_BAD_REQUEST)
         upload_id = request.GET[LOAD_RESTORE_PARAM_NAME]
-        
+
         if (not upload_id) or (upload_id == ''):
             return Response('An invalid ID has been provided.',
                             status=status.HTTP_400_BAD_REQUEST)
@@ -195,7 +197,7 @@ class LoadView(APIView):
         param_filename = False
         upload_id_fmt = re.compile('^([%s]){22}$'
                                    % (shortuuid.get_alphabet()))
-        
+
         su = None
         if not upload_id_fmt.match(upload_id):
             param_filename = True
@@ -209,7 +211,7 @@ class LoadView(APIView):
                 LOG.debug('A StoredUpload with the provided ID doesn\'t '
                           'exist. Assuming this could be a filename.')
                 param_filename = True
-        
+
         if param_filename:
             # Try and lookup a StoredUpload record with the specified id
             # as the file path
@@ -218,7 +220,7 @@ class LoadView(APIView):
             except StoredUpload.DoesNotExist:
                 LOG.debug('A StoredUpload with the provided file path '
                           'doesn\'t exist.')
-                return Response('Not found', 
+                return Response('Not found',
                                 status=status.HTTP_404_NOT_FOUND)
         # su is now the StoredUpload record for the requested file
 
@@ -258,29 +260,29 @@ class LoadView(APIView):
                                 status=status.HTTP_404_NOT_FOUND)
 
         # su is now the StoredUpload record for the requested file
-        
+
         # See if the stored file with the path specified in su exists 
         # in the file store location
         file_path = os.path.join(file_path_base, su.file_path)
-        if ((not os.path.exists(file_path)) or 
+        if ((not os.path.exists(file_path)) or
             (not os.path.isfile(file_path))):
             return Response('Error reading file...',
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
+
         # We now know that the file exists and is a file not a directory
         try:
             with open(file_path, 'rb') as f:
-                data = f.read() 
+                data = f.read()
         except IOError as e:
             LOG.error('Error reading requested file: %s' % str(e))
             return Response('Error reading file...',
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
+
         filename = os.path.basename(su.file_path)
         ct = _get_content_type(filename)
-        
+
         response = HttpResponse(data, content_type=ct)
-        response['Content-Disposition'] = ('inline; filename=%s' % 
+        response['Content-Disposition'] = ('inline; filename=%s' %
                                            filename)
         return response
 
@@ -308,49 +310,49 @@ class LoadView(APIView):
         return response
 
 class RestoreView(APIView):
-    
+
     # Expect the upload ID to be provided with the 'name' parameter
     def get(self, request):
         LOG.debug('Filepond API: Restore view GET called...')
         if LOAD_RESTORE_PARAM_NAME not in request.GET:
-            return Response('A required parameter is missing.', 
+            return Response('A required parameter is missing.',
                             status=status.HTTP_400_BAD_REQUEST)
-        
+
         upload_id = request.GET[LOAD_RESTORE_PARAM_NAME]
-        
-        upload_id_fmt = re.compile('^([%s]){22}$' % 
+
+        upload_id_fmt = re.compile('^([%s]){22}$' %
                                    (shortuuid.get_alphabet()))
-        
+
         if not upload_id_fmt.match(upload_id):
             return Response('An invalid ID has been provided.',
                             status=status.HTTP_400_BAD_REQUEST)
-        
+
         LOG.debug('Carrying out restore for file ID <%s>' % upload_id)
-        
+
         try:
             tu = TemporaryUpload.objects.get(upload_id=upload_id)
         except TemporaryUpload.DoesNotExist:
             return Response('Not found', status=status.HTTP_404_NOT_FOUND)
-        
+
         upload_file_name = tu.upload_name
         try:
             with open(tu.file.path, 'rb') as f:
-                data = f.read() 
+                data = f.read()
         except IOError as e:
             LOG.error('Error reading requested file: %s' % str(e))
             return Response('Error reading file data...',
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
+
         ct = _get_content_type(upload_file_name)
-        
+
         response = HttpResponse(data, content_type=ct)
-        response['Content-Disposition'] = ('inline; filename=%s' % 
+        response['Content-Disposition'] = ('inline; filename=%s' %
                                            upload_file_name)
-        
+
         return response
 
 class FetchView(APIView):
-        
+
     def _process_request(self, request):
         LOG.debug('Filepond API: Fetch view GET called...')
         '''
@@ -361,12 +363,12 @@ class FetchView(APIView):
         # Retrieve the target URL from the request query string target
         # target parameter, pull the file into temp upload storage and 
         # return a file object.
-        
+
         # First check we have a URL and parse to check it's valid
         target_url = request.query_params.get('target', None)
         if not target_url:
             raise ParseError('Required query parameter(s) missing.')
-        
+
         # Use Django's URL validator to see if we've been given a valid URL
         validator = URLValidator(message=('An invalid URL <%s> has been '
                                           'provided' % (target_url)))
@@ -374,7 +376,7 @@ class FetchView(APIView):
             validator(target_url)
         except ValidationError as e:
             raise ParseError(str(e))
-        
+
         # TODO: SHould we check the headers returned when we request the 
         # download to see that we're getting a file rather than an HTML page? 
         # For now this check is enabled on the basis that we assume target 
@@ -387,7 +389,7 @@ class FetchView(APIView):
         try:
             header = requests.head(target_url, allow_redirects=True)
         except ConnectionError as e:
-            msg = ('Unable to access the requested remote file headers: %s' 
+            msg = ('Unable to access the requested remote file headers: %s'
                    % str(e))
             LOG.error(msg)
             return Response(msg, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -396,7 +398,7 @@ class FetchView(APIView):
             raise NotFound('The remote file was not found.')
 
         content_type = header.headers.get('Content-Type','')
-        
+
         # If the URL has returned URL content but an HTML file was not 
         # requested then assume that the URL has linked to a download page or
         # some sort of error page or similar and raise an error.
@@ -404,7 +406,7 @@ class FetchView(APIView):
             LOG.error('The requested data seems to be in HTML format. '
                       'Assuming this is not valid data file.')
             raise ParseError('Provided URL links to HTML content.')
-        
+
         buf = BytesIO()
         upload_file_name = None
         try:
@@ -419,7 +421,7 @@ class FetchView(APIView):
         except ConnectionError as e:
             raise NotFound('Unable to access the requested remote file: %s'
                            % str(e))
-        
+
         file_id = _get_file_id()
         # If filename wasn't extracted from Content-Disposition header, get
         # from the URL or otherwise set it to the auto-generated file_id
@@ -428,10 +430,10 @@ class FetchView(APIView):
                 split = target_url.rsplit('/',1)
                 upload_file_name = split[1] if len(split) > 1 else split[0]
             else:
-                upload_file_name = file_id 
- 
-        return (buf, file_id, upload_file_name, content_type)    
-        
+                upload_file_name = file_id
+
+        return (buf, file_id, upload_file_name, content_type)
+
     def head(self, request):
         LOG.debug('Filepond API: Fetch view HEAD called...')
         result = self._process_request(request)
@@ -441,10 +443,10 @@ class FetchView(APIView):
             return result
         else:
             raise ValueError('process_request result is of an unexpected type')
-        
+
         file_size = buf.seek(0, os.SEEK_END)
-        buf.seek(0) 
-        
+        buf.seek(0)
+
         # The addressing of filepond issue #154 
         # (https://github.com/pqina/filepond/issues/154) means that fetch 
         # can now store a file downloaded from a remote URL and return file 
@@ -452,22 +454,23 @@ class FetchView(APIView):
         # GET request then the standard approach of proxying the file back 
         # to the client is used.
         upload_id = _get_file_id()
-        memfile = InMemoryUploadedFile(buf, None, file_id, content_type, 
+        memfile = InMemoryUploadedFile(buf, None, file_id, content_type,
                                        file_size, None)
-        tu = TemporaryUpload(upload_id=upload_id, file_id=file_id,  
-                     file=memfile, upload_name=upload_file_name, 
+        url = "{}/{}".format(local_settings.UPLOAD_TMP, upload_file_name)
+        tu = TemporaryUpload(upload_id=upload_id, file_id=file_id,
+                     url=url, upload_name=upload_file_name,
                      upload_type=TemporaryUpload.URL)
         tu.save()
-        
+
         response = Response(status=status.HTTP_200_OK)
         response['Content-Type'] = content_type
         response['Content-Length'] = file_size
         response['X-Content-Transfer-Id'] = upload_id
-        response['Content-Disposition'] = ('inline; filename=%s' % 
+        response['Content-Disposition'] = ('inline; filename=%s' %
                                            upload_file_name)
         return response
-    
-        
+
+
     def get(self, request):
         result = self._process_request(request)
         if isinstance(result, tuple):
@@ -476,8 +479,8 @@ class FetchView(APIView):
             return result
         else:
             raise ValueError('process_request result is of an unexpected type')
-        response = Response(buf.getvalue(), status=status.HTTP_200_OK, 
+        response = Response(buf.getvalue(), status=status.HTTP_200_OK,
                             content_type=content_type)
-        response['Content-Disposition'] = ('inline; filename=%s' % 
+        response['Content-Disposition'] = ('inline; filename=%s' %
                                            upload_file_name)
         return response
