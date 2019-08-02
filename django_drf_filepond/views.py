@@ -3,8 +3,9 @@ from __future__ import unicode_literals
 
 from io import BytesIO
 import logging
-
+from django.conf import settings
 from django.conf.global_settings import MEDIA_URL
+from django.core.files.storage import default_storage
 
 import django_drf_filepond.drf_filepond_settings as local_settings
 from django.core.exceptions import ValidationError
@@ -36,28 +37,28 @@ def _get_file_id():
     return file_id
 
 # FIXME: This is a very basic approach to working out the MIME type.
-#        It is prone to errors and can be inaccurate since it is 
+#        It is prone to errors and can be inaccurate since it is
 #        based only on the file extension.
-#        A better approach would be to use python-magic but this 
-#        introduces another dependency and will likely result in  
+#        A better approach would be to use python-magic but this
+#        introduces another dependency and will likely result in
 #        issues on some platforms.
-#        Another option is to store the MIME type in the DB when the 
+#        Another option is to store the MIME type in the DB when the
 #        file is uploaded and look this up and return it.
 #
-# At present this helper function takes only the filename (the data 
-# parameter). If this is refactored to use something like python-magic, 
-# 'data' will be the header data from the file to enable file type detection. 
+# At present this helper function takes only the filename (the data
+# parameter). If this is refactored to use something like python-magic,
+# 'data' will be the header data from the file to enable file type detection.
 def _get_content_type(data, temporary=True):
     return mimetypes.guess_type(data)[0]
 
 class ProcessView(APIView):
     '''
     This view receives an uploaded file from the filepond client. It
-    stores the file in a temporary location and generates a unique ID which 
-    it associates with the temporary upload. The unique ID is returned to 
-    the client. If and when the parent form is finally submitted, the unique 
-    ID is provided and the file is then moved from the temporary store into 
-    permanent storage in line with the requirements of the parent application.  
+    stores the file in a temporary location and generates a unique ID which
+    it associates with the temporary upload. The unique ID is returned to
+    the client. If and when the parent form is finally submitted, the unique
+    ID is provided and the file is then moved from the temporary store into
+    permanent storage in line with the requirements of the parent application.
     '''
     # This view uses the MultiPartParser to parse the uploaded file data
     # from FilePond.
@@ -67,10 +68,10 @@ class ProcessView(APIView):
     def post(self, request):
         LOG.debug('Filepond API: Process view POST called...')
 
-        # Enforce that the upload location must be a sub-directory of 
+        # Enforce that the upload location must be a sub-directory of
         # the project base directory
-        # TODO: Check whether this is necessary - maybe add a security 
-        # parameter that can be disabled to turn off this check if the 
+        # TODO: Check whether this is necessary - maybe add a security
+        # parameter that can be disabled to turn off this check if the
         # developer wishes?
         if not hasattr(local_settings, 'UPLOAD_TMP'):
             return Response('The file upload path settings are not '
@@ -83,8 +84,8 @@ class ProcessView(APIView):
         upload_id = _get_file_id()
 
         # By default the upload element name is expected to be "filepond"
-        # As raised in issue #4, there are cases where there may be more 
-        # than one filepond instance on a page, or the developer has opted 
+        # As raised in issue #4, there are cases where there may be more
+        # than one filepond instance on a page, or the developer has opted
         # not to use the name "filepond" for the filepond instance.
         # Using the example from #4, this provides support these cases.
         upload_field_name = 'filepond'
@@ -105,7 +106,7 @@ class ProcessView(APIView):
         if not isinstance(file_obj, UploadedFile):
             raise ParseError('Invalid data type has been parsed.')
 
-        # Before we attempt to save the file, make sure that the upload  
+        # Before we attempt to save the file, make sure that the upload
         # directory we're going to save to exists.
         # *** It's not necessary to explicitly create the directory since
         # *** the FileSystemStorage object creates the directory on save
@@ -114,10 +115,11 @@ class ProcessView(APIView):
         #             '<%s>...' % storage.location)
         #    os.makedirs(storage.location, mode=0o700)
 
-        # We now need to create the temporary upload object and store the 
+        # We now need to create the temporary upload object and store the
         # file and metadata.
         url = "{}/{}".format(local_settings.UPLOAD_TMP, upload_filename)
-
+        default_storage.save(
+            "{}/{}/{}".format(settings.DJANGO_DRF_FILEPOND_UPLOAD_TMP_SUFFIX, upload_id, file_id), file_obj)
         tu = TemporaryUpload(upload_id=upload_id, file_id=file_id,
                              url=url, upload_name=upload_filename,
                              upload_type=TemporaryUpload.FILE_DATA)
@@ -136,14 +138,14 @@ class RevertView(APIView):
     pressed and we remove the previously uploaded temporary file.
     '''
     def delete(self, request):
-        # If we've received the incoming data as bytes, we need to decode 
+        # If we've received the incoming data as bytes, we need to decode
         # it to a string
         if type(request.data) == type(b''):
             request_data = request.data.decode('utf-8')
         else:
             request_data = request.data
 
-        # Expecting a 22-character unique ID telling us which temporary 
+        # Expecting a 22-character unique ID telling us which temporary
         # upload to remove.
         LOG.debug('Filepond API: Revert view DELETE called...')
         upload_id = request_data.strip()
@@ -156,6 +158,7 @@ class RevertView(APIView):
             tu = TemporaryUpload.objects.get(upload_id=upload_id)
             LOG.debug('About to delete temporary upload <%s> with original '
                       'filename <%s>' % (tu.upload_id, tu.upload_name))
+            default_storage.delete("{}/{}/{}".format(settings.DJANGO_DRF_FILEPOND_UPLOAD_TMP_SUFFIX, tu.upload_id, tu.file_id))
             tu.delete()
         except TemporaryUpload.DoesNotExist:
             raise NotFound('The specified file does not exist.')
@@ -167,20 +170,10 @@ class LoadView(APIView):
     # Expect the upload ID to be provided with the 'id' parameter
     # This may be either an upload_id that is stored in the StoredUpload
     # table or it may be the path to a file (relative to the fixed upload
-    # directory specified by the DJANGO_DRF_FILEPOND_FILE_STORE_PATH 
-    # setting parameter). 
+    # directory specified by the DJANGO_DRF_FILEPOND_FILE_STORE_PATH
+    # setting parameter).
     def get(self, request):
         LOG.debug('Filepond API: Load view GET called...')
-
-        if ((not hasattr(local_settings, 'FILE_STORE_PATH'))
-            or
-            (not os.path.exists(local_settings.FILE_STORE_PATH))
-            or
-            (not os.path.isdir(local_settings.FILE_STORE_PATH))
-        ):
-            return Response('The file upload settings are not configured '
-                            'correctly.',
-                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         if LOAD_RESTORE_PARAM_NAME not in request.GET:
             return Response('A required parameter is missing.',
