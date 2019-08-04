@@ -77,7 +77,7 @@ class ProcessView(APIView):
             return Response('The file upload path settings are not '
                             'configured correctly.',
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
+        print("Test1")
         # Check that we've received a file and then generate a unique ID
         # for it. Also generate a unique UD for the temp upload dir
         file_id = _get_file_id()
@@ -96,7 +96,7 @@ class ProcessView(APIView):
             raise ParseError("Invalid request data has been provided.")
 
         file_obj = request.data[upload_field_name]
-
+        print("Test2")
         # Save original file name and set name of saved file to the unique ID
         upload_filename = file_obj.name
         file_obj.name = file_id
@@ -105,7 +105,7 @@ class ProcessView(APIView):
         # type.
         if not isinstance(file_obj, UploadedFile):
             raise ParseError('Invalid data type has been parsed.')
-
+        print("Test3")
         # Before we attempt to save the file, make sure that the upload
         # directory we're going to save to exists.
         # *** It's not necessary to explicitly create the directory since
@@ -120,13 +120,16 @@ class ProcessView(APIView):
         url = "{}/{}".format(local_settings.UPLOAD_TMP, upload_filename)
         default_storage.save(
             "{}/{}/{}".format(settings.DJANGO_DRF_FILEPOND_UPLOAD_TMP_SUFFIX, upload_id, file_id), file_obj)
+        print("Test4")
         tu = TemporaryUpload(upload_id=upload_id, file_id=file_id,
                              url=url, upload_name=upload_filename,
                              upload_type=TemporaryUpload.FILE_DATA)
+        print("Test5")
         tu.save()
-
+        print("Test6")
         response = Response(upload_id, status=status.HTTP_200_OK,
                             content_type='text/plain')
+        print("Test7")
         return response
 
 class RevertView(APIView):
