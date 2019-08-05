@@ -118,8 +118,9 @@ class ProcessView(APIView):
         # We now need to create the temporary upload object and store the
         # file and metadata.
         url = "{}/{}".format(local_settings.UPLOAD_TMP, upload_filename)
+        print(getattr(settings, 'DJANGO_DRF_FILEPOND_UPLOAD_TMP_SUFFIX'))
         default_storage.save(
-            "{}/{}/{}".format(settings.DJANGO_DRF_FILEPOND_UPLOAD_TMP_SUFFIX, upload_id, file_id), file_obj)
+            "{}/{}/{}".format(getattr(settings, 'DJANGO_DRF_FILEPOND_UPLOAD_TMP_SUFFIX'), upload_id, file_id), file_obj)
         print("Test4")
         tu = TemporaryUpload(upload_id=upload_id, file_id=file_id,
                              url=url, upload_name=upload_filename,
