@@ -138,7 +138,7 @@ class RevertView(APIView):
     parser_classes = (PlainTextParser,)
     renderer_classes = (PlainTextRenderer,)
     '''
-    This is called when we need to revert the uploaded file - i.e. undo is
+    This is called when we need to revert the uploaded file - i.e. undo is+
     pressed and we remove the previously uploaded temporary file.
     '''
     def delete(self, request):
@@ -221,7 +221,7 @@ class LoadView(APIView):
                                 status=status.HTTP_404_NOT_FOUND)
         # su is now the StoredUpload record for the requested file
 
-        file_path = '//{}/{}'.format(file_path_base, su.file_path)
+        file_path = '{}/{}'.format(file_path_base, su.file_path)
         response = HttpResponseRedirect(file_path)
         return response
 
