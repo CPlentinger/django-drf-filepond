@@ -39,15 +39,12 @@ class TemporaryUpload(models.Model):
     # The unique ID used to store the file itself
     file_id = models.CharField(max_length=22,
                                validators=[MinLengthValidator(22)])
-    file = models.FileField(storage=storage, upload_to=get_upload_path)
+    file_path = models.CharField(max_length=2048)
     url = models.URLField(null=True)
     upload_name = models.CharField(max_length=512)
     uploaded = models.DateTimeField(auto_now_add=True)
     upload_type = models.CharField(max_length = 1,
                                    choices=UPLOAD_TYPE_CHOICES)
-
-    def get_file_url(self):
-        return self.url
 
 class StoredUpload(models.Model):
 
