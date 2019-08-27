@@ -8,10 +8,11 @@
 #
 import logging
 import os
-import shutil
 
 import django_drf_filepond.drf_filepond_settings as local_settings
 from django.core.exceptions import ImproperlyConfigured
+from django.conf import settings
+from django.core.files.storage import default_storage
 import re
 import shortuuid
 from django_drf_filepond.models import TemporaryUpload, StoredUpload
@@ -55,15 +56,12 @@ def store_upload(upload_id, destination_file_path):
         tu = TemporaryUpload.objects.get(upload_id=upload_id)
     except TemporaryUpload.DoesNotExist:
         raise ValueError('Record for the specified upload_id doesn\'t exist')
-
-    target_dir = os.path.join(file_path_base,
-                              os.path.dirname(destination_file_path))
     if destination_file_path.endswith(os.sep):
         # Assume a directory was provided, get the file name from tu and 
         # add this to the provided path.
         destination_file_path += tu.upload_name
 
-    target_file_path = os.path.join(file_path_base, destination_file_path)
+    target_file_path = '{}/{}'.format(file_path_base, destination_file_path)
 
     # Check we're not about to overwrite anything
     if os.path.exists(target_file_path):
@@ -76,13 +74,18 @@ def store_upload(upload_id, destination_file_path):
                       file_path=destination_file_path, uploaded=tu.uploaded)
 
     try:
-        if not os.path.exists(target_dir):
-            os.makedirs(target_dir)
-        shutil.copy2(tu.get_file_path(), target_file_path)
+        image = default_storage.open(
+            "{}/{}".format(getattr(settings, 'DJANGO_DRF_FILEPOND_UPLOAD_TMP_SUFFIX'), tu.get_file_path()))
+        default_storage.save(destination_file_path, image)
+        image.close()
         su.save()
+        default_storage.delete(
+            "{}/{}".format(getattr(settings, 'DJANGO_DRF_FILEPOND_UPLOAD_TMP_SUFFIX'), tu.get_file_path()))
         tu.delete()
     except IOError as e:
         LOG.error('Error moving temporary file to permanent storage location')
         raise e
+    except Exception as e:
+        print(e)
 
     return su

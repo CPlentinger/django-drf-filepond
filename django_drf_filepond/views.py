@@ -4,7 +4,6 @@ from __future__ import unicode_literals
 from io import BytesIO
 import logging
 from django.conf import settings
-from django.conf.global_settings import MEDIA_URL
 from django.core.files.storage import default_storage
 
 import django_drf_filepond.drf_filepond_settings as local_settings
@@ -32,9 +31,11 @@ LOG = logging.getLogger(__name__)
 
 LOAD_RESTORE_PARAM_NAME = 'id'
 
+
 def _get_file_id():
     file_id = shortuuid.uuid()
     return file_id
+
 
 # FIXME: This is a very basic approach to working out the MIME type.
 #        It is prone to errors and can be inaccurate since it is
@@ -51,15 +52,16 @@ def _get_file_id():
 def _get_content_type(data, temporary=True):
     return mimetypes.guess_type(data)[0]
 
+
 class ProcessView(APIView):
-    '''
+    """
     This view receives an uploaded file from the filepond client. It
     stores the file in a temporary location and generates a unique ID which
     it associates with the temporary upload. The unique ID is returned to
     the client. If and when the parent form is finally submitted, the unique
     ID is provided and the file is then moved from the temporary store into
     permanent storage in line with the requirements of the parent application.
-    '''
+    """
     # This view uses the MultiPartParser to parse the uploaded file data
     # from FilePond.
     parser_classes = (MultiPartParser,)
@@ -77,7 +79,6 @@ class ProcessView(APIView):
             return Response('The file upload path settings are not '
                             'configured correctly.',
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        print("Test1")
         # Check that we've received a file and then generate a unique ID
         # for it. Also generate a unique UD for the temp upload dir
         file_id = _get_file_id()
@@ -96,7 +97,6 @@ class ProcessView(APIView):
             raise ParseError("Invalid request data has been provided.")
 
         file_obj = request.data[upload_field_name]
-        print("Test2")
         # Save original file name and set name of saved file to the unique ID
         upload_filename = file_obj.name
         file_obj.name = file_id
@@ -105,42 +105,29 @@ class ProcessView(APIView):
         # type.
         if not isinstance(file_obj, UploadedFile):
             raise ParseError('Invalid data type has been parsed.')
-        print("Test3")
-        # Before we attempt to save the file, make sure that the upload
-        # directory we're going to save to exists.
-        # *** It's not necessary to explicitly create the directory since
-        # *** the FileSystemStorage object creates the directory on save
-        #if not os.path.exists(storage.location):
-        #    LOG.debug('Filepond app: Creating file upload directory '
-        #             '<%s>...' % storage.location)
-        #    os.makedirs(storage.location, mode=0o700)
 
         # We now need to create the temporary upload object and store the
         # file and metadata.
         url = "{}/{}".format(local_settings.UPLOAD_TMP, upload_filename)
-        print(getattr(settings, 'DJANGO_DRF_FILEPOND_UPLOAD_TMP_SUFFIX'))
         default_storage.save(
             "{}/{}/{}".format(getattr(settings, 'DJANGO_DRF_FILEPOND_UPLOAD_TMP_SUFFIX'), upload_id, file_id), file_obj)
-        print("Test4")
-        tu = TemporaryUpload(upload_id=upload_id, file_id=file_id,
+        tu = TemporaryUpload(upload_id=upload_id, file_id=file_id, file_path="{}/{}".format(upload_id, file_id),
                              url=url, upload_name=upload_filename,
                              upload_type=TemporaryUpload.FILE_DATA)
-        print("Test5")
         tu.save()
-        print("Test6")
         response = Response(upload_id, status=status.HTTP_200_OK,
                             content_type='text/plain')
-        print("Test7")
         return response
 
-class RevertView(APIView):
 
+class RevertView(APIView):
     parser_classes = (PlainTextParser,)
     renderer_classes = (PlainTextRenderer,)
     '''
     This is called when we need to revert the uploaded file - i.e. undo is+
     pressed and we remove the previously uploaded temporary file.
     '''
+
     def delete(self, request):
         # If we've received the incoming data as bytes, we need to decode
         # it to a string
@@ -162,12 +149,14 @@ class RevertView(APIView):
             tu = TemporaryUpload.objects.get(upload_id=upload_id)
             LOG.debug('About to delete temporary upload <%s> with original '
                       'filename <%s>' % (tu.upload_id, tu.upload_name))
-            default_storage.delete("{}/{}/{}".format(settings.DJANGO_DRF_FILEPOND_UPLOAD_TMP_SUFFIX, tu.upload_id, tu.file_id))
+            default_storage.delete(
+                "{}/{}/{}".format(settings.DJANGO_DRF_FILEPOND_UPLOAD_TMP_SUFFIX, tu.upload_id, tu.file_id))
             tu.delete()
         except TemporaryUpload.DoesNotExist:
             raise NotFound('The specified file does not exist.')
 
         return Response(status=status.HTTP_204_NO_CONTENT)
+
 
 class LoadView(APIView):
 
@@ -262,7 +251,7 @@ class LoadView(APIView):
         # in the file store location
         file_path = os.path.join(file_path_base, su.file_path)
         if ((not os.path.exists(file_path)) or
-            (not os.path.isfile(file_path))):
+                (not os.path.isfile(file_path))):
             return Response('Error reading file...',
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -306,6 +295,7 @@ class LoadView(APIView):
                                            filename)
         return response
 
+
 class RestoreView(APIView):
 
     # Expect the upload ID to be provided with the 'name' parameter
@@ -333,7 +323,7 @@ class RestoreView(APIView):
 
         upload_file_name = tu.upload_name
         try:
-            with open(tu.file.path, 'rb') as f:
+            with open(tu.file_path, 'rb') as f:
                 data = f.read()
         except IOError as e:
             LOG.error('Error reading requested file: %s' % str(e))
@@ -347,6 +337,7 @@ class RestoreView(APIView):
                                            upload_file_name)
 
         return response
+
 
 class FetchView(APIView):
 
@@ -394,7 +385,7 @@ class FetchView(APIView):
         if header.status_code == 404:
             raise NotFound('The remote file was not found.')
 
-        content_type = header.headers.get('Content-Type','')
+        content_type = header.headers.get('Content-Type', '')
 
         # If the URL has returned URL content but an HTML file was not 
         # requested then assume that the URL has linked to a download page or
@@ -424,7 +415,7 @@ class FetchView(APIView):
         # from the URL or otherwise set it to the auto-generated file_id
         if not upload_file_name:
             if not target_url.endswith('/'):
-                split = target_url.rsplit('/',1)
+                split = target_url.rsplit('/', 1)
                 upload_file_name = split[1] if len(split) > 1 else split[0]
             else:
                 upload_file_name = file_id
@@ -454,9 +445,9 @@ class FetchView(APIView):
         memfile = InMemoryUploadedFile(buf, None, file_id, content_type,
                                        file_size, None)
         url = "{}/{}".format(local_settings.UPLOAD_TMP, upload_file_name)
-        tu = TemporaryUpload(upload_id=upload_id, file_id=file_id,
-                     url=url, upload_name=upload_file_name,
-                     upload_type=TemporaryUpload.URL)
+        tu = TemporaryUpload(upload_id=upload_id, file_id=file_id, file_path="{}/{}".format(upload_id, file_id),
+                             url=url, upload_name=upload_file_name,
+                             upload_type=TemporaryUpload.URL)
         tu.save()
 
         response = Response(status=status.HTTP_200_OK)
@@ -466,7 +457,6 @@ class FetchView(APIView):
         response['Content-Disposition'] = ('inline; filename=%s' %
                                            upload_file_name)
         return response
-
 
     def get(self, request):
         result = self._process_request(request)
