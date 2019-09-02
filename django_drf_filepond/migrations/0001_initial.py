@@ -13,15 +13,6 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.CreateModel(
-            name='StoredUpload',
-            fields=[
-                ('upload_id', models.CharField(max_length=22, primary_key=True, serialize=False, validators=[django.core.validators.MinLengthValidator(22)])),
-                ('file_path', models.CharField(max_length=2048, null=True, unique=True)),
-                ('uploaded', models.DateTimeField()),
-                ('stored', models.DateTimeField(auto_now_add=True)),
-            ],
-        ),
-        migrations.CreateModel(
             name='TemporaryUpload',
             fields=[
                 ('upload_id', models.CharField(max_length=22, primary_key=True, serialize=False, validators=[django.core.validators.MinLengthValidator(22)])),
