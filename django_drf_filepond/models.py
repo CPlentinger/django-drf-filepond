@@ -39,7 +39,7 @@ class TemporaryUpload(models.Model):
     # The unique ID used to store the file itself
     file_id = models.CharField(max_length=22,
                                validators=[MinLengthValidator(22)])
-    file_path = models.CharField(max_length=2048, null=True, unique=True)
+    file_path = models.CharField(max_length=2048, null=True)
     url = models.URLField(null=True)
     upload_name = models.CharField(max_length=512)
     uploaded = models.DateTimeField(auto_now_add=True)
@@ -57,7 +57,7 @@ class StoredUpload(models.Model):
                                  validators=[MinLengthValidator(22)])
     # The file name and path (relative to the base file store directory 
     #  as set by DJANGO_DRF_FILEPOND_FILE_STORE_PATH).
-    file_path = models.CharField(max_length=2048, null=True, unique=True)
+    file_path = models.CharField(max_length=2048, null=True)
     uploaded = models.DateTimeField()
     stored = models.DateTimeField(auto_now_add=True)
 
