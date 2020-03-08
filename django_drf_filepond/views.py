@@ -210,11 +210,93 @@ class LoadView(APIView):
                                 status=status.HTTP_404_NOT_FOUND)
         # su is now the StoredUpload record for the requested file
         if su.file_path.startswith('http'):
-            file_path = su.file_path
+            result = self.handle_url(su.file_path)
+            if isinstance(result, tuple):
+                buf, _, upload_file_name, content_type = result
+            elif isinstance(result, Response):
+                return result
+            else:
+                raise ValueError('process_request result is of an unexpected type')
+            response = Response(buf.getvalue(), status=status.HTTP_200_OK,
+                                content_type=content_type)
+            response['Content-Disposition'] = ('inline; filename=%s' %
+                                               upload_file_name)
+            return response
+
         else:
             file_path = '{}/{}'.format(file_path_base, su.file_path)
         response = HttpResponseRedirect(file_path)
         return response
+
+    def handle_url(self, target_url):
+        # First check we have a URL and parse to check it's valid
+        if not target_url:
+            raise ParseError('Required query parameter(s) missing.')
+
+        # Use Django's URL validator to see if we've been given a valid URL
+        validator = URLValidator(message=('An invalid URL <%s> has been '
+                                          'provided' % target_url))
+        try:
+            validator(target_url)
+        except ValidationError as e:
+            raise ParseError(str(e))
+
+        # TODO: SHould we check the headers returned when we request the
+        # download to see that we're getting a file rather than an HTML page?
+        # For now this check is enabled on the basis that we assume target
+        # data file will not be HTML. However, there should be a way to turn
+        # this off if the client knows that they want to get an HTML file.
+        # TODO: *** Looks like this use of head can be removed since with
+        # the new approach of streaming content to a BytesIO object, when
+        # stream=True, the connection begins by being opened and only
+        # fetching the headers. We could do this check then.
+        try:
+            header = requests.head(target_url, allow_redirects=True)
+        except ConnectionError as e:
+            msg = ('Unable to access the requested remote file headers: %s'
+                   % str(e))
+            LOG.error(msg)
+            return Response(msg, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        if header.status_code == 404:
+            raise NotFound('The remote file was not found.')
+
+        content_type = header.headers.get('Content-Type', '')
+
+        # If the URL has returned URL content but an HTML file was not
+        # requested then assume that the URL has linked to a download page or
+        # some sort of error page or similar and raise an error.
+        if 'html' in content_type.lower() and '.html' not in target_url:
+            LOG.error('The requested data seems to be in HTML format. '
+                      'Assuming this is not valid data file.')
+            raise ParseError('Provided URL links to HTML content.')
+
+        buf = BytesIO()
+        upload_file_name = None
+        try:
+            with requests.get(target_url, allow_redirects=True, stream=True) as r:
+                if 'Content-Disposition' in r.headers:
+                    cd = r.headers['Content-Disposition']
+                    matches = re.findall('filename=(.+)', cd)
+                    if len(matches):
+                        upload_file_name = matches[0]
+                for chunk in r.iter_content(chunk_size=1048576):
+                    buf.write(chunk)
+        except ConnectionError as e:
+            raise NotFound('Unable to access the requested remote file: %s'
+                           % str(e))
+
+        file_id = _get_file_id()
+        # If filename wasn't extracted from Content-Disposition header, get
+        # from the URL or otherwise set it to the auto-generated file_id
+        if not upload_file_name:
+            if not target_url.endswith('/'):
+                split = target_url.rsplit('/', 1)
+                upload_file_name = split[1] if len(split) > 1 else split[0]
+            else:
+                upload_file_name = file_id
+
+        return (buf, file_id, upload_file_name, content_type)
 
     def default_fp_get(self, upload_id):
         file_path_base = local_settings.FILE_STORE_PATH
