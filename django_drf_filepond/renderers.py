@@ -40,3 +40,12 @@ class PlainTextRenderer(BaseRenderer):
             else:
                 return data.encode(self.charset)
         return data
+
+
+class ImageRenderer(BaseRenderer):
+    media_type = 'image/*'
+    charset = None
+    render_style = 'binary'
+
+    def render(self, data, media_type=None, renderer_context=None):
+        return data

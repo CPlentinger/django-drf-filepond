@@ -21,7 +21,7 @@ import shortuuid
 
 from django_drf_filepond.models import TemporaryUpload, storage, StoredUpload
 from django_drf_filepond.parsers import PlainTextParser
-from django_drf_filepond.renderers import PlainTextRenderer
+from django_drf_filepond.renderers import PlainTextRenderer, ImageRenderer
 import re
 import os
 import mimetypes
@@ -165,6 +165,8 @@ class LoadView(APIView):
     # table or it may be the path to a file (relative to the fixed upload
     # directory specified by the DJANGO_DRF_FILEPOND_FILE_STORE_PATH
     # setting parameter).
+    renderer_classes = (ImageRenderer,)
+
     def get(self, request):
         LOG.debug('Filepond API: Load view GET called...')
 
