@@ -209,8 +209,10 @@ class LoadView(APIView):
                 return Response('Not found',
                                 status=status.HTTP_404_NOT_FOUND)
         # su is now the StoredUpload record for the requested file
-
-        file_path = '{}/{}'.format(file_path_base, su.file_path)
+        if su.file_path.startswith('http'):
+            file_path = su.file_path
+        else:
+            file_path = '{}/{}'.format(file_path_base, su.file_path)
         response = HttpResponseRedirect(file_path)
         return response
 
@@ -249,7 +251,10 @@ class LoadView(APIView):
 
         # See if the stored file with the path specified in su exists 
         # in the file store location
-        file_path = os.path.join(file_path_base, su.file_path)
+        if su.file_path.startswith('http'):
+            file_path = su.file_path
+        else:
+            file_path = os.path.join(file_path_base, su.file_path)
         if ((not os.path.exists(file_path)) or
                 (not os.path.isfile(file_path))):
             return Response('Error reading file...',
